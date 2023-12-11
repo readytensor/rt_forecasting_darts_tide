@@ -1,0 +1,19 @@
+{
+  "history_forecast_ratio": 10,
+  "lags_forecast_ratio": 4,
+  "hidden_size": 256,
+  "num_encoder_layers": 1,
+  "num_decoder_layers": 1,
+  "temporal_width_past": 4,
+  "temporal_width_future": 4,
+  "temporal_decoder_hidden": 32,
+  "use_layer_norm": true,
+  "dropout": 0.0,
+  "n_epochs": 500,
+  "batch_size": 16,
+  "force_reset": true,
+  "save_checkpoints": true,
+  "optimizer_kwargs": {"lr": 1e-3},
+  "use_exogenous": true,
+  "random_state": 0
+}

@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Tuple, Union
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from darts.utils.utils import ModelMode, SeasonalityMode, TrendMode
 
 
 def read_json_as_dict(input_path: str) -> Dict:
@@ -196,23 +195,3 @@ def make_serializable(obj: Any) -> Union[int, float, List[Union[int, float]], An
         return obj.tolist()
     else:
         return json.JSONEncoder.default(None, obj)
-
-
-def process_hyperparameters(hyperparameters: dict, forecast_length: int) -> dict:
-    to_be_removed = ["history_forecast_ratio", "lags_forecast_ratio"]
-
-    if hyperparameters.get("history_forecast_ratio"):
-        history_forecast_ratio = hyperparameters["history_forecast_ratio"]
-        history_length = forecast_length * history_forecast_ratio
-        hyperparameters["history_length"] = history_length
-
-    if hyperparameters.get("lags_forecast_ratio"):
-        lags_forecast_ratio = hyperparameters["lags_forecast_ratio"]
-        lags = forecast_length * lags_forecast_ratio
-        hyperparameters["input_chunk_length"] = lags
-        hyperparameters["output_chunk_length"] = forecast_length
-
-    for k in to_be_removed:
-        if k in hyperparameters:
-            hyperparameters.pop(k)
-    return hyperparameters

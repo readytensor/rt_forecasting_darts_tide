@@ -2,7 +2,6 @@ import argparse
 import os
 from config import paths
 from data_models.data_validator import validate_data
-from hyperparameter_tuning.tuner import tune_hyperparameters
 from logger import get_logger, log_error
 from prediction.predictor_model import (
     evaluate_predictor_model,
@@ -14,7 +13,6 @@ from utils import (
     read_csv_in_directory,
     read_json_as_dict,
     set_seeds,
-    process_hyperparameters,
 )
 
 logger = get_logger(task_name="train")
@@ -82,11 +80,11 @@ def run_training(
         logger.info("Training forecaster...")
         default_hyperparameters = read_json_as_dict(default_hyperparameters_file_path)
 
-        default_hyperparameters = process_hyperparameters(
-            default_hyperparameters, forecast_length=data_schema.forecast_length
-        )
         testing_dataframe = None
-        if data_schema.future_covariates or data_schema.time_col_dtype == "DATE":
+        if data_schema.future_covariates or data_schema.time_col_dtype in [
+            "DATE",
+            "DATETIME",
+        ]:
             testing_dataframe = read_csv_in_directory(paths.TEST_DIR)
 
         forecaster = train_predictor_model(

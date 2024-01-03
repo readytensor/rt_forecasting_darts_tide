@@ -82,7 +82,7 @@ class Covariate(BaseModel):
 
 class SchemaModel(BaseModel):
     """
-    A schema validator for binary classification problems. Validates the
+    A schema validator for forecasting problems. Validates the
     problem category, version, and predictor fields of the input schema.
     """
 
@@ -99,6 +99,7 @@ class SchemaModel(BaseModel):
     forecastTarget: ForecastTarget
     pastCovariates: List[Covariate]
     futureCovariates: List[Covariate]
+    staticCovariates: List[Covariate]
 
     @validator("modelCategory", allow_reuse=True)
     def valid_problem_category(cls, v):
@@ -143,6 +144,24 @@ class SchemaModel(BaseModel):
         if duplicates:
             raise ValueError(
                 "Duplicate future covariates names found in schema: "
+                f"`{', '.join(duplicates)}`"
+            )
+
+        return v
+
+    @validator("staticCovariates", allow_reuse=True)
+    def unique_statatic_covariate_names(cls, v):
+        """
+        Check that the static covariates names are unique.
+        """
+        feature_names = [feature.name for feature in v]
+        duplicates = [
+            item for item, count in Counter(feature_names).items() if count > 1
+        ]
+
+        if duplicates:
+            raise ValueError(
+                "Duplicate static covariates names found in schema: "
                 f"`{', '.join(duplicates)}`"
             )
 

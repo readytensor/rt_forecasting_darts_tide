@@ -1,3 +1,4 @@
+import time
 import json
 import os
 import random
@@ -195,3 +196,17 @@ def make_serializable(obj: Any) -> Union[int, float, List[Union[int, float]], An
         return obj.tolist()
     else:
         return json.JSONEncoder.default(None, obj)
+
+
+class Timer(object):
+    def __init__(self, logger):
+        self.logger = logger
+
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.end = time.time()
+        self.interval = self.end - self.start
+        self.logger.info(f"Execution time: {self.interval:.2f} seconds")

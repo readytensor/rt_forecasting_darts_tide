@@ -9,7 +9,7 @@ from data_models.prediction_data_model import validate_predictions
 from logger import get_logger, log_error
 from prediction.predictor_model import load_predictor_model, predict_with_model
 from schema.data_schema import load_saved_schema
-from utils import read_csv_in_directory, read_json_as_dict, save_dataframe_as_csv
+from utils import read_csv_in_directory, read_json_as_dict, save_dataframe_as_csv, Timer
 
 logger = get_logger(task_name="predict")
 
@@ -107,9 +107,12 @@ def run_batch_predictions(
         predictor_model = load_predictor_model(predictor_dir_path)
 
         logger.info("Making predictions...")
-        predictions = predict_with_model(
-            predictor_model, validated_test_data, model_config["prediction_field_name"]
-        )
+        with Timer(logger) as _:
+            predictions = predict_with_model(
+                predictor_model,
+                validated_test_data,
+                model_config["prediction_field_name"],
+            )
         logger.info("Validating predictions...")
         validated_predictions = validate_predictions(
             predictions, data_schema, model_config["prediction_field_name"]

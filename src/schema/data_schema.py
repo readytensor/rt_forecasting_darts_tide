@@ -197,7 +197,7 @@ class ForecastingSchema:
         Returns:
             List[str]: The covariates list.
         """
-        return self._past_covariates + self._future_covariates
+        return self._past_covariates + self._future_covariates + self._static_covariates
 
     @property
     def all_fields(self) -> List[str]:
@@ -212,6 +212,7 @@ class ForecastingSchema:
             [self.id_col, self.time_col, self.target]
             + self._past_covariates
             + self._future_covariates
+            + self._static_covariates
         )
 
     @property
@@ -334,7 +335,11 @@ class ForecastingSchema:
         Raises:
             ValueError: If the covariate is not found in the schema.
         """
-        covariates = self.schema["pastCovariates"] + self.schema["futureCovariates"]
+        covariates = (
+            self.schema["pastCovariates"]
+            + self.schema["futureCovariates"]
+            + self.schema["staticCovariates"]
+        )
         for covariate in covariates:
             if covariate["name"] == covariate_name:
                 return covariate

@@ -76,19 +76,11 @@ def run_training(
         logger.info("Training forecaster...")
         default_hyperparameters = read_json_as_dict(default_hyperparameters_file_path)
 
-        testing_dataframe = None
-        if data_schema.future_covariates or data_schema.time_col_dtype in [
-            "DATE",
-            "DATETIME",
-        ]:
-            testing_dataframe = read_csv_in_directory(paths.TEST_DIR)
-
         with Timer(logger) as _:
             forecaster = train_predictor_model(
                 history=validated_data,
                 data_schema=data_schema,
                 hyperparameters=default_hyperparameters,
-                testing_dataframe=testing_dataframe,
             )
 
         # save predictor model

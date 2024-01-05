@@ -3,7 +3,7 @@ import warnings
 import joblib
 import numpy as np
 import pandas as pd
-from typing import Optional
+from typing import Optional, Tuple, List
 from darts.models.forecasting.tide_model import TiDEModel
 from darts import TimeSeries
 from schema.data_schema import ForecastingSchema
@@ -190,8 +190,7 @@ class Forecaster:
         history: pd.DataFrame,
         data_schema: ForecastingSchema,
         history_length: int = None,
-        test_dataframe: pd.DataFrame = None,
-    ) -> pd.DataFrame:
+    ) -> Tuple[List, List, List]:
         """
         Puts the data into the expected shape by the forecaster.
         Drops the time column and puts all the target series as columns in the dataframe.
@@ -199,9 +198,10 @@ class Forecaster:
         Args:
             history (pd.DataFrame): The provided training data.
             data_schema (ForecastingSchema): The schema of the training data.
+            history_length (int): The number of historical timesteps to be considered.
 
         Returns:
-            pd.DataFrame: The processed data.
+            Tuple[List, List, List]: Target, Past covariates and Future covariates.
         """
         targets = []
         past = []
@@ -218,11 +218,8 @@ class Forecaster:
             history[month_col_name] = month_col
             future_covariates_names += [year_col_name, month_col_name]
 
-            date_col = pd.to_datetime(test_dataframe[data_schema.time_col])
             year_col = date_col.dt.year
             month_col = date_col.dt.month
-            test_dataframe[year_col_name] = year_col
-            test_dataframe[month_col_name] = month_col
 
         groups_by_ids = history.groupby(data_schema.id_col)
         all_ids = list(groups_by_ids.groups.keys())
@@ -273,22 +270,13 @@ class Forecaster:
                 )
                 past.append(past_covariates)
 
+        future_scalers = {}
         if future_covariates_names:
-            test_groups_by_ids = test_dataframe.groupby(data_schema.id_col)
-            test_all_series = [
-                test_groups_by_ids.get_group(id_).drop(columns=data_schema.id_col)
-                for id_ in all_ids
-            ]
-
-            for train_series, test_series in zip(all_series, test_all_series):
+            for id, train_series in zip(all_ids, all_series):
                 if history_length:
                     train_series = train_series.iloc[-self.history_length :]
 
-                train_future_covariates = train_series[future_covariates_names]
-                test_future_covariates = test_series[future_covariates_names]
-                future_covariates = pd.concat(
-                    [train_future_covariates, test_future_covariates], axis=0
-                )
+                future_covariates = train_series[future_covariates_names]
 
                 future_covariates.reset_index(inplace=True)
                 future_scaler = MinMaxScaler()
@@ -300,25 +288,98 @@ class Forecaster:
                 future_covariates[
                     future_covariates_names
                 ] = future_scaler.fit_transform(original_values)
+
+                future_covariates = TimeSeries.from_dataframe(
+                    future_covariates[future_covariates_names]
+                )
+                future_scalers[id] = future_scaler
+                future.append(future_covariates)
+
+        self.scalers = scalers
+        self.future_scalers = future_scalers
+        if not past or not self.use_exogenous:
+            past = None
+        if not future or not self.use_exogenous:
+            future = None
+
+        return targets, past, future
+
+    def _prepare_test_data(
+        self,
+        data: pd.DataFrame,
+    ) -> List:
+        """
+        Prepares testing data.
+
+        Args:
+            data (pd.DataFrame): Testing data.
+
+        Returns (List): Training and testing future covariates concatenated together.
+
+        """
+        future = []
+        data_schema = self.data_schema
+        future_covariates_names = data_schema.future_covariates
+        if data_schema.time_col_dtype in ["DATE", "DATETIME"]:
+            date_col = pd.to_datetime(data[data_schema.time_col])
+            year_col = date_col.dt.year
+            month_col = date_col.dt.month
+            year_col_name = f"{data_schema.time_col}_year"
+            month_col_name = f"{data_schema.time_col}_month"
+            data[year_col_name] = year_col
+            data[month_col_name] = month_col
+            year_col = date_col.dt.year
+            month_col = date_col.dt.month
+
+        groups_by_ids = data.groupby(data_schema.id_col)
+        all_ids = list(groups_by_ids.groups.keys())
+        all_series = [
+            groups_by_ids.get_group(id_).drop(columns=data_schema.id_col)
+            for id_ in all_ids
+        ]
+
+        if future_covariates_names:
+            for id, test_series in zip(all_ids, all_series):
+                future_covariates = test_series[future_covariates_names]
+
+                future_covariates.reset_index(inplace=True)
+                future_scaler = self.future_scalers[id]
+                original_values = (
+                    future_covariates[future_covariates_names].values.reshape(-1, 1)
+                    if len(future_covariates_names) == 1
+                    else future_covariates[future_covariates_names].values
+                )
+
+                future_covariates[future_covariates_names] = future_scaler.transform(
+                    original_values
+                )
+
                 future_covariates = TimeSeries.from_dataframe(
                     future_covariates[future_covariates_names]
                 )
                 future.append(future_covariates)
 
-        self.scalers = scalers
-        if not past:
-            past = None
-        if not future:
+        if not future or not self.use_exogenous:
             future = None
+        else:
+            for index, (train_covariates, test_covariates) in enumerate(
+                zip(self.training_future_covariates, future)
+            ):
+                train_values = train_covariates.values()
+                test_values = test_covariates.values()
 
-        return targets, past, future
+                full_values = np.concatenate((train_values, test_values), axis=0)
+                full_series = TimeSeries.from_values(full_values)
+
+                future[index] = full_series
+
+        return future
 
     def fit(
         self,
         history: pd.DataFrame,
         data_schema: ForecastingSchema,
         history_length: int = None,
-        test_dataframe: pd.DataFrame = None,
     ) -> None:
         """Fit the Forecaster to the training data.
         A separate TiDE model is fit to each series that is contained
@@ -328,19 +389,13 @@ class Forecaster:
             history (pandas.DataFrame): The features of the training data.
             data_schema (ForecastingSchema): The schema of the training data.
             history_length (int): The length of the series used for training.
-            test_dataframe (pd.DataFrame): The testing data (needed only if the data contains future covariates).
         """
         np.random.seed(self.random_state)
         targets, past_covariates, future_covariates = self._prepare_data(
             history=history,
             history_length=history_length,
             data_schema=data_schema,
-            test_dataframe=test_dataframe,
         )
-
-        if not self.use_exogenous:
-            past_covariates = None
-            future_covariates = None
 
         self.model.fit(
             targets,
@@ -352,7 +407,7 @@ class Forecaster:
         self.data_schema = data_schema
         self.targets_series = targets
         self.past_covariates = past_covariates
-        self.future_covariates = future_covariates
+        self.training_future_covariates = future_covariates
 
     def predict(
         self, test_data: pd.DataFrame, prediction_col_name: str
@@ -368,11 +423,13 @@ class Forecaster:
         if not self._is_trained:
             raise NotFittedError("Model is not fitted yet.")
 
+        future_covariates = self._prepare_test_data(test_data)
+
         predictions = self.model.predict(
             n=self.data_schema.forecast_length,
             series=self.targets_series,
             past_covariates=self.past_covariates,
-            future_covariates=self.future_covariates,
+            future_covariates=future_covariates,
         )
         prediction_values = []
         for index, prediction in enumerate(predictions):
@@ -418,7 +475,6 @@ def train_predictor_model(
     history: pd.DataFrame,
     data_schema: ForecastingSchema,
     hyperparameters: dict,
-    testing_dataframe: pd.DataFrame = None,
 ) -> Forecaster:
     """
     Instantiate and train the predictor model.
@@ -427,7 +483,6 @@ def train_predictor_model(
         history (pd.DataFrame): The training data inputs.
         data_schema (ForecastingSchema): Schema of the training data.
         hyperparameters (dict): Hyperparameters for the Forecaster.
-        test_dataframe (pd.DataFrame): The testing data (needed only if the data contains future covariates).
 
     Returns:
         'Forecaster': The Forecaster model
@@ -441,7 +496,6 @@ def train_predictor_model(
         history=history,
         data_schema=data_schema,
         history_length=model.history_length,
-        test_dataframe=testing_dataframe,
     )
     return model
 

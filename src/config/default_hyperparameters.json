@@ -1,6 +1,7 @@
 {
   "history_forecast_ratio": 10,
   "lags_forecast_ratio": 4,
+  "output_chunk_length": 1,
   "hidden_size": 256,
   "num_encoder_layers": 1,
   "num_decoder_layers": 1,
@@ -14,6 +15,8 @@
   "force_reset": true,
   "save_checkpoints": true,
   "optimizer_kwargs": {"lr": 1e-3},
-  "use_exogenous": true,
+  "use_past_covariates": false,
+  "use_future_covariates": true,
+  "use_static_covariates": true,
   "random_state": 0
 }

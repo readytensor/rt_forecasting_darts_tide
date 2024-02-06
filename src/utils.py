@@ -2,6 +2,7 @@ import time
 import json
 import os
 import random
+import tracemalloc
 from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
@@ -198,15 +199,31 @@ def make_serializable(obj: Any) -> Union[int, float, List[Union[int, float]], An
         return json.JSONEncoder.default(None, obj)
 
 
-class Timer(object):
+class TimeAndMemoryTracker(object):
+    """
+    This class serves as a context manager to track time and
+    memory allocated by code executed inside it.
+    """
+
     def __init__(self, logger):
         self.logger = logger
 
     def __enter__(self):
-        self.start = time.time()
+        tracemalloc.start()
+        self.initial_current, self.initial_peak = tracemalloc.get_traced_memory()
+        self.start_time = time.time()
+
         return self
 
-    def __exit__(self, *args):
-        self.end = time.time()
-        self.interval = self.end - self.start
-        self.logger.info(f"Execution time: {self.interval:.2f} seconds")
+    def __exit__(self, exc_type, exc_value, traceback):
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        current_diff = current - self.initial_current
+        peak_diff = peak - self.initial_peak
+
+        self.end_time = time.time()
+        elapsed_time = self.end_time - self.start_time
+
+        self.logger.info(f"Execution time: {elapsed_time:.2f} seconds")
+        self.logger.info(f"Memory allocated (peak): {peak_diff / 1024**2:.2f} MB")

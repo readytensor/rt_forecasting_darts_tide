@@ -11,13 +11,15 @@ from sklearn.exceptions import NotFittedError
 from torch import cuda
 from sklearn.preprocessing import MinMaxScaler
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-
+from logger import get_logger
 
 warnings.filterwarnings("ignore")
 
 
 PREDICTOR_FILE_NAME = "predictor.joblib"
 MODEL_FILE_NAME = "model.joblib"
+
+logger = get_logger(task_name="model")
 
 
 class Forecaster:
@@ -173,32 +175,13 @@ class Forecaster:
             mode="min",
         )
 
-        pl_trainer_kwargs = {"callbacks": [stopper]}
+        self.pl_trainer_kwargs = {"callbacks": [stopper]}
 
         if cuda.is_available():
-            pl_trainer_kwargs["accelerator"] = "gpu"
+            self.pl_trainer_kwargs["accelerator"] = "gpu"
             print("GPU training is available.")
         else:
             print("GPU training not available.")
-
-        self.model = TiDEModel(
-            input_chunk_length=self.input_chunk_length,
-            output_chunk_length=self.output_chunk_length,
-            num_encoder_layers=self.num_encoder_layers,
-            num_decoder_layers=self.num_decoder_layers,
-            decoder_output_dim=self.decoder_output_dim,
-            hidden_size=self.hidden_size,
-            temporal_width_past=self.temporal_width_past,
-            temporal_width_future=self.temporal_width_future,
-            temporal_decoder_hidden=self.temporal_decoder_hidden,
-            use_layer_norm=self.use_layer_norm,
-            dropout=self.dropout,
-            use_static_covariates=self.use_static_covariates,
-            optimizer_kwargs=self.optimizer_kwargs,
-            pl_trainer_kwargs=pl_trainer_kwargs,
-            random_state=self.random_state,
-            **kwargs,
-        )
 
     def _prepare_data(
         self,
@@ -262,9 +245,9 @@ class Forecaster:
             target = TimeSeries.from_dataframe(
                 s,
                 value_cols=data_schema.target,
-                static_covariates=static_covariates.iloc[0]
-                if static_covariates is not None
-                else None,
+                static_covariates=(
+                    static_covariates.iloc[0] if static_covariates is not None else None
+                ),
             )
 
             targets.append(target)
@@ -298,9 +281,9 @@ class Forecaster:
                     if len(future_covariates_names) == 1
                     else future_covariates[future_covariates_names].values
                 )
-                future_covariates[
-                    future_covariates_names
-                ] = future_scaler.fit_transform(original_values)
+                future_covariates[future_covariates_names] = (
+                    future_scaler.fit_transform(original_values)
+                )
 
                 future_covariates = TimeSeries.from_dataframe(
                     future_covariates[future_covariates_names]
@@ -388,6 +371,36 @@ class Forecaster:
 
         return future
 
+    def _validate_input_chunk_and_history_lengths(self, series_length: int) -> None:
+        """
+        Validate the value of input_chunk_length and that history length is at least double the forecast horizon.
+        If the provided input_chunk_length value is invalid (too large), input_chunk_length are set to the largest possible value.
+
+        Args:
+            series_length (int): The length of the history.
+
+        Returns: None
+        """
+
+        if series_length < 2 * self.data_schema.forecast_length:
+            raise ValueError(
+                f"Training series is too short. History should be at least double the forecast horizon. history_length = ({series_length}), forecast horizon = ({self.data_schema.forecast_length})"
+            )
+
+        if self.input_chunk_length > series_length - self.output_chunk_length:
+            logger.warning(
+                f"histroy_length is ({series_length}) and output_chunk_length is ({self.output_chunk_length})."
+                f" input_chunk_length cannot exceed the value of (histroy_length - output_chunk_length). Setting input_chunk_length = ({series_length - self.output_chunk_length})"
+            )
+            self.input_chunk_length = series_length - self.output_chunk_length
+
+        elif self.input_chunk_length > series_length:
+            self.input_chunk_length = series_length - self.output_chunk_length
+            logger.warning(
+                "The provided input_chunk_length value is greater than the available history length."
+                f" input_chunk_length are set to to (history length - forecast horizon) = {self.input_chunk_length}"
+            )
+
     def fit(
         self,
         history: pd.DataFrame,
@@ -406,6 +419,27 @@ class Forecaster:
         targets, past_covariates, future_covariates = self._prepare_data(
             history=history,
             data_schema=data_schema,
+        )
+
+        self._validate_input_chunk_and_history_lengths(series_length=len(targets[0]))
+
+        self.model = TiDEModel(
+            input_chunk_length=self.input_chunk_length,
+            output_chunk_length=self.output_chunk_length,
+            num_encoder_layers=self.num_encoder_layers,
+            num_decoder_layers=self.num_decoder_layers,
+            decoder_output_dim=self.decoder_output_dim,
+            hidden_size=self.hidden_size,
+            temporal_width_past=self.temporal_width_past,
+            temporal_width_future=self.temporal_width_future,
+            temporal_decoder_hidden=self.temporal_decoder_hidden,
+            use_layer_norm=self.use_layer_norm,
+            dropout=self.dropout,
+            use_static_covariates=self.use_static_covariates,
+            optimizer_kwargs=self.optimizer_kwargs,
+            pl_trainer_kwargs=self.pl_trainer_kwargs,
+            random_state=self.random_state,
+            **self.kwargs,
         )
 
         self.model.fit(
@@ -551,20 +585,3 @@ def load_predictor_model(predictor_dir_path: str) -> Forecaster:
         Forecaster: A new instance of the loaded Forecaster model.
     """
     return Forecaster.load(predictor_dir_path)
-
-
-def evaluate_predictor_model(
-    model: Forecaster, x_test: pd.DataFrame, y_test: pd.Series
-) -> float:
-    """
-    Evaluate the Forecaster model and return the accuracy.
-
-    Args:
-        model (Forecaster): The Forecaster model.
-        x_test (pd.DataFrame): The features of the test data.
-        y_test (pd.Series): The labels of the test data.
-
-    Returns:
-        float: The accuracy of the Forecaster model.
-    """
-    return model.evaluate(x_test, y_test)

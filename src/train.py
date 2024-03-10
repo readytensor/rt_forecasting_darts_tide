@@ -1,5 +1,3 @@
-import argparse
-import os
 from config import paths
 from data_models.data_validator import validate_data
 from logger import get_logger, log_error
@@ -25,9 +23,6 @@ def run_training(
     train_dir: str = paths.TRAIN_DIR,
     predictor_dir_path: str = paths.PREDICTOR_DIR_PATH,
     default_hyperparameters_file_path: str = paths.DEFAULT_HYPERPARAMETERS_FILE_PATH,
-    run_tuning: bool = False,
-    hpt_specs_file_path: str = paths.HPT_CONFIG_FILE_PATH,
-    hpt_results_dir_path: str = paths.HPT_OUTPUTS_DIR,
 ) -> None:
     """
     Run the training process and saves model artifacts
@@ -105,22 +100,5 @@ def run_training(
         raise Exception(f"{err_msg} Error: {str(exc)}") from exc
 
 
-def parse_arguments() -> argparse.Namespace:
-    """Parse the command line argument that indicates if user wants to run
-    hyperparameter tuning."""
-    parser = argparse.ArgumentParser(description="Train a binary classification model.")
-    parser.add_argument(
-        "-t",
-        "--tune",
-        action="store_true",
-        help=(
-            "Run hyperparameter tuning before training the model. "
-            + "If not set, use default hyperparameters.",
-        ),
-    )
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
-    args = parse_arguments()
-    run_training(run_tuning=args.tune)
+    run_training()

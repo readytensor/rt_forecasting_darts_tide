@@ -22,6 +22,15 @@ MODEL_FILE_NAME = "model.joblib"
 logger = get_logger(task_name="model")
 
 
+def get_patience_factor(N, fcst_len):
+    # magic number - just picked through trial and error
+    # Increase patience if data size is low.
+    # For bigger data sizes, patience is lower.
+    multiplier = int(N // fcst_len)
+    patience = max(5, int(45 - multiplier))
+    return patience
+
+
 class Forecaster:
     """A wrapper class for the TiDE Forecaster.
 
@@ -168,20 +177,8 @@ class Forecaster:
             lags = self.data_schema.forecast_length * lags_forecast_ratio
             self.input_chunk_length = lags
 
-        stopper = EarlyStopping(
-            monitor="train_loss",
-            patience=100,
-            min_delta=0.0005,
-            mode="min",
-        )
-
-        self.pl_trainer_kwargs = {"callbacks": [stopper]}
-
-        if cuda.is_available():
-            self.pl_trainer_kwargs["accelerator"] = "gpu"
-            print("GPU training is available.")
-        else:
-            print("GPU training not available.")
+        self.pl_trainer_kwargs = None # set in fit()
+        self.model = None # set in fit()
 
     def _prepare_data(
         self,
@@ -422,6 +419,21 @@ class Forecaster:
         )
 
         self._validate_input_chunk_and_history_lengths(series_length=len(targets[0]))
+        patience = get_patience_factor(history.shape[0], self.data_schema.forecast_length)
+        print("patience", patience)
+
+        stopper = EarlyStopping(
+            monitor="train_loss",
+            patience=30,
+            min_delta=0.0005,
+            mode="min",
+        )
+        self.pl_trainer_kwargs = {"callbacks": [stopper]}
+        if cuda.is_available():
+            self.pl_trainer_kwargs["accelerator"] = "gpu"
+            print("GPU training is available.")
+        else:
+            print("GPU training not available.")
 
         self.model = TiDEModel(
             input_chunk_length=self.input_chunk_length,

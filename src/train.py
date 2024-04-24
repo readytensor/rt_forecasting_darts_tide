@@ -47,7 +47,7 @@ def run_training(
     """
 
     try:
-        with ResourceTracker(logger=logger, monitoring_interval=5):
+        with ResourceTracker(logger=logger, monitoring_interval=0.1):
             logger.info("Starting training...")
             # load and save schema
             logger.info("Loading and saving schema...")

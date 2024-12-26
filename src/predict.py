@@ -91,7 +91,7 @@ def run_batch_predictions(
     """
 
     try:
-        with ResourceTracker(logger=logger, monitoring_interval=0.1):
+        with ResourceTracker(logger=logger, monitoring_interval=0.1, is_train=False):
             logger.info("Making batch predictions...")
 
             logger.info("Loading schema...")
